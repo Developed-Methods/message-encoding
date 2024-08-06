@@ -1,0 +1,10 @@
+[package]
+name = "message-encoding"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "A simple trait to control how a structure should be encoded"
+repository = "https://github.com/Developed-Methods/message-encoding"
+
+[dependencies]
+byteorder = "1.5"
