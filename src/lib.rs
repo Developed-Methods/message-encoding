@@ -297,7 +297,7 @@ impl MessageEncoding for Ipv6Addr {
 }
 
 impl MessageEncoding for SocketAddrV4 {
-    const STATIC_SIZE: Option<usize> = Some(size::<Ipv4Addr>() + size::<u16>());
+    const STATIC_SIZE: Option<usize> = Some(m_static::<Ipv4Addr>() + m_static::<u16>());
     
     fn write_to<T: Write>(&self, out: &mut T) -> Result<usize> {
         let mut sum = 0;
@@ -427,18 +427,57 @@ impl<'a> MessageEncoding for &'a [u8] {
     }
 }
 
-const fn size<T: MessageEncoding>() -> usize {
+pub const fn m_static<T: MessageEncoding>() -> usize {
     match T::STATIC_SIZE {
         Some(v) => v,
         None => panic!()
     }
 }
 
+pub const fn m_max<T: MessageEncoding>() -> usize {
+    match T::MAX_SIZE {
+        Some(v) => v,
+        None => panic!()
+    }
+}
+
+pub const fn m_max_list(samples: &'static [usize]) -> usize {
+    const fn scan(mut max: usize, idx: usize, samples: &'static [usize]) -> usize {
+        if idx == samples.len() {
+            return max;
+        }
+
+        let compare = samples[idx];
+        if max < compare {
+            max = compare;
+        }
+
+        scan(max, idx + 1, samples)
+    }
+
+    if samples.len() == 0 {
+        panic!("m_max_list provided 0 samples");
+    }
+    
+    scan(samples[0], 1, samples)
+}
+
 #[cfg(test)]
 mod test {
     use std::{net::{Ipv4Addr, Ipv6Addr, IpAddr, SocketAddr, SocketAddrV4}, str::FromStr, sync::Arc, borrow::Cow};
 
+    use crate::m_max_list;
+
     use super::test_assert_valid_encoding;
+
+    #[test]
+    fn test_m_max_list() {
+        assert_eq!(100, m_max_list(&[3, 5, 67, 1, 51, 100, 54, 1, 65]));
+        assert_eq!(67, m_max_list(&[3, 5, 67, 1, 51, 3, 54, 1, 65]));
+        assert_eq!(99, m_max_list(&[99, 5, 67, 1, 51, 3, 54, 1, 65]));
+        assert_eq!(555, m_max_list(&[99, 5, 67, 1, 51, 3, 54, 1, 555]));
+        assert_eq!(99, m_max_list(&[99]));
+    }
 
     #[test]
     fn test_std_encoding() {

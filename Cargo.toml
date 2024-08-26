@@ -1,6 +1,6 @@
 [package]
 name = "message-encoding"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 license = "MIT"
 description = "A simple trait to control how a structure should be encoded"
