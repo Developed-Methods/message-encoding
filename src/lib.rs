@@ -8,12 +8,25 @@ use std::fmt::Debug;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 pub trait MessageEncoding: Sized {
+    const STATIC_SIZE: Option<usize> = None;
+    const MAX_SIZE: Option<usize> = Self::STATIC_SIZE;
+
+    const _ASSERT: usize = {
+        match (Self::STATIC_SIZE, Self::MAX_SIZE) {
+            (Some(a), Some(b)) if a != b => panic!("static size must equal max"),
+            (Some(_), None) => panic!("cannot have static and not max"),
+            _ => {}
+        }
+        0
+    };
+
     fn write_to<T: Write>(&self, out: &mut T) -> Result<usize>;
 
     fn read_from<T: Read>(read: &mut T) -> Result<Self>;
 
+    #[deprecated]
     fn static_size() -> Option<usize> {
-        None
+        Self::STATIC_SIZE
     }
 }
 
@@ -24,6 +37,8 @@ pub struct EncodeSkipContext<T, C> {
 }
 
 impl<M: MessageEncoding, C: Default> MessageEncoding for EncodeSkipContext<M, C> {
+    const STATIC_SIZE: Option<usize> = M::STATIC_SIZE;
+
     fn write_to<T: Write>(&self, out: &mut T) -> Result<usize> {
         self.data.write_to(out)
     }
@@ -34,19 +49,21 @@ impl<M: MessageEncoding, C: Default> MessageEncoding for EncodeSkipContext<M, C>
             context: C::default(),
         })
     }
-
-    fn static_size() -> Option<usize> {
-        M::static_size()
-    }
 }
 
 pub fn test_assert_valid_encoding<T: MessageEncoding + PartialEq + Debug>(msg: T) {
+    assert_eq!(0, T::_ASSERT);
+
     let mut buffer: Vec<u8> = vec![];
     let bytes_written = msg.write_to(&mut buffer).unwrap();
 
     assert_eq!(bytes_written, buffer.len());
-    if let Some(expected_size) = T::static_size() {
+    if let Some(expected_size) = T::STATIC_SIZE {
         assert_eq!(expected_size, bytes_written);
+    }
+
+    if let Some(max_size) = T::MAX_SIZE {
+        assert!(bytes_written <= max_size);
     }
 
     let mut reader = &buffer[..];
@@ -57,6 +74,8 @@ pub fn test_assert_valid_encoding<T: MessageEncoding + PartialEq + Debug>(msg: T
 }
 
 impl MessageEncoding for u64 {
+    const STATIC_SIZE: Option<usize> = Some(8);
+
     fn write_to<T: Write>(&self, out: &mut T) -> Result<usize> {
         out.write_u64::<BigEndian>(*self)?;
         Ok(8)
@@ -65,13 +84,11 @@ impl MessageEncoding for u64 {
     fn read_from<T: Read>(read: &mut T) -> Result<Self> {
         read.read_u64::<BigEndian>()
     }
-
-    fn static_size() -> Option<usize> {
-        Some(8)
-    }
 }
 
 impl MessageEncoding for u32 {
+    const STATIC_SIZE: Option<usize> = Some(4);
+
     fn write_to<T: Write>(&self, out: &mut T) -> Result<usize> {
         out.write_u32::<BigEndian>(*self)?;
         Ok(4)
@@ -80,13 +97,11 @@ impl MessageEncoding for u32 {
     fn read_from<T: Read>(read: &mut T) -> Result<Self> {
         read.read_u32::<BigEndian>()
     }
-
-    fn static_size() -> Option<usize> {
-        Some(4)
-    }
 }
 
 impl MessageEncoding for u16 {
+    const STATIC_SIZE: Option<usize> = Some(2);
+
     fn write_to<T: Write>(&self, out: &mut T) -> Result<usize> {
         out.write_u16::<BigEndian>(*self)?;
         Ok(2)
@@ -95,13 +110,11 @@ impl MessageEncoding for u16 {
     fn read_from<T: Read>(read: &mut T) -> Result<Self> {
         read.read_u16::<BigEndian>()
     }
-
-    fn static_size() -> Option<usize> {
-        Some(2)
-    }
 }
 
 impl MessageEncoding for u8 {
+    const STATIC_SIZE: Option<usize> = Some(1);
+
     fn write_to<T: Write>(&self, out: &mut T) -> Result<usize> {
         out.write_u8(*self)?;
         Ok(1)
@@ -110,13 +123,19 @@ impl MessageEncoding for u8 {
     fn read_from<T: Read>(read: &mut T) -> Result<Self> {
         read.read_u8()
     }
-
-    fn static_size() -> Option<usize> {
-        Some(1)
-    }
 }
 
 impl<T: MessageEncoding> MessageEncoding for Option<T> {
+    const STATIC_SIZE: Option<usize> = match T::STATIC_SIZE {
+        Some(v) => Some(v + 1),
+        None => None,
+    };
+
+    const MAX_SIZE: Option<usize> = match T::MAX_SIZE {
+        Some(v) => Some(v + 1),
+        None => None,
+    };
+
     fn write_to<I: Write>(&self, out: &mut I) -> Result<usize> {
         match self {
             Some(v) => {
@@ -137,13 +156,12 @@ impl<T: MessageEncoding> MessageEncoding for Option<T> {
             _ => Err(Error::new(ErrorKind::Other, "invalid Option value")),
         }
     }
-
-    fn static_size() -> Option<usize> {
-        Some(1 + T::static_size()?)
-    }
 }
 
 impl<'a, T: MessageEncoding + Clone> MessageEncoding for Cow<'a, T> {
+    const STATIC_SIZE: Option<usize> = T::STATIC_SIZE;
+    const MAX_SIZE: Option<usize> = T::MAX_SIZE;
+
     fn write_to<I: Write>(&self, out: &mut I) -> Result<usize> {
         match self {
             Cow::Borrowed(v) => v.write_to(out),
@@ -154,13 +172,12 @@ impl<'a, T: MessageEncoding + Clone> MessageEncoding for Cow<'a, T> {
     fn read_from<I: Read>(read: &mut I) -> Result<Self> {
         Ok(Cow::Owned(T::read_from(read)?))
     }
-
-    fn static_size() -> Option<usize> {
-        T::static_size()
-    }
 }
 
 impl<T: MessageEncoding> MessageEncoding for Arc<T> {
+    const STATIC_SIZE: Option<usize> = T::STATIC_SIZE;
+    const MAX_SIZE: Option<usize> = T::MAX_SIZE;
+
     fn write_to<I: Write>(&self, out: &mut I) -> Result<usize> {
         T::write_to(&*self, out)
     }
@@ -168,13 +185,11 @@ impl<T: MessageEncoding> MessageEncoding for Arc<T> {
     fn read_from<I: Read>(read: &mut I) -> Result<Self> {
         Ok(Arc::new(T::read_from(read)?))
     }
-
-    fn static_size() -> Option<usize> {
-        T::static_size()
-    }
 }
 
 impl MessageEncoding for IpAddr {
+    const STATIC_SIZE: Option<usize> = Some(17);
+
     fn write_to<T: Write>(&self, out: &mut T) -> Result<usize> {
         match self {
             IpAddr::V4(ip) => {
@@ -202,6 +217,8 @@ impl MessageEncoding for IpAddr {
 }
 
 impl MessageEncoding for SocketAddr {
+    const STATIC_SIZE: Option<usize> = Some(19);
+
     fn write_to<T: Write>(&self, out: &mut T) -> Result<usize> {
         match self {
             SocketAddr::V4(addr) => {
@@ -238,6 +255,8 @@ impl MessageEncoding for SocketAddr {
 }
 
 impl MessageEncoding for Ipv4Addr {
+    const STATIC_SIZE: Option<usize> = Some(4);
+
     fn write_to<T: Write>(&self, out: &mut T) -> Result<usize> {
         if out.write(&self.octets())? != 4 {
             return Err(Error::new(ErrorKind::WriteZero, "failed to write full ip"));
@@ -252,13 +271,11 @@ impl MessageEncoding for Ipv4Addr {
         }
         Ok(Ipv4Addr::from(bytes))
     }
-
-    fn static_size() -> Option<usize> {
-        Some(4)
-    }
 }
 
 impl MessageEncoding for Ipv6Addr {
+    const STATIC_SIZE: Option<usize> = Some(16);
+
     fn write_to<T: Write>(&self, out: &mut T) -> Result<usize> {
         if out.write(&self.octets())? != 16 {
             return Err(Error::new(ErrorKind::WriteZero, "failed to write full ip"));
@@ -280,6 +297,8 @@ impl MessageEncoding for Ipv6Addr {
 }
 
 impl MessageEncoding for SocketAddrV4 {
+    const STATIC_SIZE: Option<usize> = Some(size::<Ipv4Addr>() + size::<u16>());
+    
     fn write_to<T: Write>(&self, out: &mut T) -> Result<usize> {
         let mut sum = 0;
         sum += self.ip().write_to(out)?;
@@ -289,10 +308,6 @@ impl MessageEncoding for SocketAddrV4 {
 
     fn read_from<T: Read>(read: &mut T) -> Result<Self> {
         Ok(SocketAddrV4::new(Ipv4Addr::read_from(read)?, u16::read_from(read)?))
-    }
-
-    fn static_size() -> Option<usize> {
-        Some(Ipv4Addr::static_size()? + u16::static_size()?)
     }
 }
 
@@ -316,6 +331,16 @@ impl MessageEncoding for Vec<u8> {
 }
 
 impl<T: MessageEncoding, const C: usize> MessageEncoding for [T; C] where [T; C]: Sized {
+    const STATIC_SIZE: Option<usize> = match T::STATIC_SIZE {
+        Some(v) => Some(C * v),
+        None => None,
+    };
+
+    const MAX_SIZE: Option<usize> = match T::MAX_SIZE {
+        Some(v) => Some(C * v),
+        None => None,
+    };
+
     fn write_to<W: Write>(&self, out: &mut W) -> Result<usize> {
         let mut sum = 0;
         for item in self {
@@ -335,13 +360,19 @@ impl<T: MessageEncoding, const C: usize> MessageEncoding for [T; C] where [T; C]
 
         Ok(unsafe { array_assume_init(data) })
     }
-
-    fn static_size() -> Option<usize> {
-        Some(C * T::static_size()?)
-    }
 }
 
 impl<A: MessageEncoding, B: MessageEncoding> MessageEncoding for (A, B) {
+    const STATIC_SIZE: Option<usize> = match (A::STATIC_SIZE, B::STATIC_SIZE) {
+        (Some(a), Some(b)) => Some(a + b),
+        _ => None,
+    };
+
+    const MAX_SIZE: Option<usize> = match (A::MAX_SIZE, B::MAX_SIZE) {
+        (Some(a), Some(b)) => Some(a + b),
+        _ => None,
+    };
+
     fn write_to<W: Write>(&self, out: &mut W) -> Result<usize> {
         let mut sum = 0;
         sum += self.0.write_to(out)?;
@@ -352,23 +383,18 @@ impl<A: MessageEncoding, B: MessageEncoding> MessageEncoding for (A, B) {
     fn read_from<R: Read>(read: &mut R) -> Result<Self> {
         Ok((A::read_from(read)?, B::read_from(read)?))
     }
-
-    fn static_size() -> Option<usize> {
-        Some(A::static_size()? + B::static_size()?)
-    }
 }
 
 impl<'a, T: MessageEncoding> MessageEncoding for &'a T {
+    const STATIC_SIZE: Option<usize> = T::STATIC_SIZE;
+    const MAX_SIZE: Option<usize> = T::MAX_SIZE;
+
     fn write_to<W: Write>(&self, out: &mut W) -> Result<usize> {
         T::write_to(self, out)
     }
 
     fn read_from<R: Read>(_: &mut R) -> Result<Self> {
         Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "cannot read into reference"))
-    }
-
-    fn static_size() -> Option<usize> {
-        T::static_size()
     }
 }
 
@@ -398,6 +424,13 @@ impl<'a> MessageEncoding for &'a [u8] {
 
     fn read_from<T: Read>(_: &mut T) -> std::io::Result<Self> {
         Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "cannot read for &[u8]"))
+    }
+}
+
+const fn size<T: MessageEncoding>() -> usize {
+    match T::STATIC_SIZE {
+        Some(v) => v,
+        None => panic!()
     }
 }
 
