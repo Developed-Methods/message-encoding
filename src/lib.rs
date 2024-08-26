@@ -188,7 +188,7 @@ impl<T: MessageEncoding> MessageEncoding for Arc<T> {
 }
 
 impl MessageEncoding for IpAddr {
-    const STATIC_SIZE: Option<usize> = Some(17);
+    const MAX_SIZE: Option<usize> = Some(17);
 
     fn write_to<T: Write>(&self, out: &mut T) -> Result<usize> {
         match self {
@@ -217,7 +217,7 @@ impl MessageEncoding for IpAddr {
 }
 
 impl MessageEncoding for SocketAddr {
-    const STATIC_SIZE: Option<usize> = Some(19);
+    const MAX_SIZE: Option<usize> = Some(19);
 
     fn write_to<T: Write>(&self, out: &mut T) -> Result<usize> {
         match self {
