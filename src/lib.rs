@@ -427,6 +427,31 @@ impl<'a> MessageEncoding for &'a [u8] {
     }
 }
 
+impl MessageEncoding for bool {
+    const STATIC_SIZE: Option<usize> = Some(1);
+
+    fn write_to<T: Write>(&self, out: &mut T) -> std::io::Result<usize> {
+        (*self as u8).write_to(out)
+    }
+
+    fn read_from<T: Read>(read: &mut T) -> std::io::Result<Self> {
+        Ok(u8::read_from(read)? == 1)
+    }
+}
+
+impl MessageEncoding for i32 {
+    const STATIC_SIZE: Option<usize> = Some(4);
+
+    fn write_to<T: Write>(&self, out: &mut T) -> std::io::Result<usize> {
+        out.write_i32::<BigEndian>(*self)?;
+        Ok(4)
+    }
+
+    fn read_from<T: Read>(read: &mut T) -> std::io::Result<Self> {
+        read.read_i32::<BigEndian>()
+    }
+}
+
 pub const fn m_static<T: MessageEncoding>() -> usize {
     match T::STATIC_SIZE {
         Some(v) => v,
@@ -497,6 +522,9 @@ mod test {
         test_assert_valid_encoding(Cow::<'_, SocketAddrV4>::Owned(SocketAddrV4::from_str("127.0.0.1:1234").unwrap()));
         test_assert_valid_encoding(vec![1u8, 2, 3, 4]);
         test_assert_valid_encoding([1u8, 2, 3, 4, 5]);
+        test_assert_valid_encoding(true);
+        test_assert_valid_encoding(false);
+        test_assert_valid_encoding(100i32);
 
         let v = SocketAddrV4::from_str("127.0.0.1:1234").unwrap();
         test_assert_valid_encoding(Cow::<'_, SocketAddrV4>::Borrowed(&v));
