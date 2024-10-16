@@ -480,11 +480,33 @@ pub const fn m_max_list(samples: &'static [usize]) -> usize {
         scan(max, idx + 1, samples)
     }
 
-    if samples.len() == 0 {
+    if samples.is_empty() {
         panic!("m_max_list provided 0 samples");
     }
     
     scan(samples[0], 1, samples)
+}
+
+pub const fn m_opt_sum(samples: &'static [Option<usize>]) -> Option<usize> {
+    const fn scan(current: usize, idx: usize, samples: &'static [Option<usize>]) -> Option<usize> {
+        if idx == samples.len() {
+            return Some(current);
+        }
+
+        match samples[idx] {
+            Some(sample) => scan(current + sample, idx + 1, samples),
+            None => None,
+        }
+    }
+
+    if samples.is_empty() {
+        panic!("m_opt_sum provided 0 samples");
+    }
+
+    match samples[0] {
+        Some(current) => scan(current, 1, samples),
+        None => None,
+    }
 }
 
 #[cfg(test)]
