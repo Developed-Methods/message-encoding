@@ -99,6 +99,19 @@ impl MessageEncoding for String {
     }
 }
 
+impl MessageEncoding for usize {
+    const STATIC_SIZE: Option<usize> = u64::STATIC_SIZE;
+
+    fn write_to<T: Write>(&self, out: &mut T) -> Result<usize> {
+        (*self as u64).write_to(out)
+    }
+
+    fn read_from<T: Read>(read: &mut T) -> Result<Self> {
+        Ok(u64::read_from(read)? as usize)
+    }
+}
+
+
 impl MessageEncoding for u64 {
     const STATIC_SIZE: Option<usize> = Some(8);
 
@@ -575,6 +588,7 @@ mod test {
         test_assert_valid_encoding(100i32);
         test_assert_valid_encoding(());
         test_assert_valid_encoding("hello world".to_string());
+        test_assert_valid_encoding(321412312usize);
 
         let v = SocketAddrV4::from_str("127.0.0.1:1234").unwrap();
         test_assert_valid_encoding(Cow::<'_, SocketAddrV4>::Borrowed(&v));
