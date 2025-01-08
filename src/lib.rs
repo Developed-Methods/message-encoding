@@ -85,6 +85,20 @@ impl MessageEncoding for () {
     }
 }
 
+impl MessageEncoding for String {
+    fn write_to<T: Write>(&self, out: &mut T) -> Result<usize> {
+        let mut sum = 0;
+        sum += (self.len() as u64).write_to(out)?;
+        sum += self.as_bytes().write_to(out)?;
+        Ok(sum)
+    }
+
+    fn read_from<T: Read>(read: &mut T) -> Result<Self> {
+        let bytes = Vec::<u8>::read_from(read)?;
+        String::from_utf8(bytes).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+    }
+}
+
 impl MessageEncoding for u64 {
     const STATIC_SIZE: Option<usize> = Some(8);
 
@@ -559,6 +573,8 @@ mod test {
         test_assert_valid_encoding(true);
         test_assert_valid_encoding(false);
         test_assert_valid_encoding(100i32);
+        test_assert_valid_encoding(());
+        test_assert_valid_encoding("hello world".to_string());
 
         let v = SocketAddrV4::from_str("127.0.0.1:1234").unwrap();
         test_assert_valid_encoding(Cow::<'_, SocketAddrV4>::Borrowed(&v));
