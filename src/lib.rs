@@ -73,6 +73,18 @@ pub fn test_assert_valid_encoding<T: MessageEncoding + PartialEq + Debug>(msg: T
     assert_eq!(parsed, msg);
 }
 
+impl MessageEncoding for () {
+    const STATIC_SIZE: Option<usize> = Some(0);
+
+    fn write_to<T: Write>(&self, _out: &mut T) -> Result<usize> {
+        Ok(0)
+    }
+
+    fn read_from<T: Read>(_read: &mut T) -> Result<Self> {
+        Ok(())
+    }
+}
+
 impl MessageEncoding for u64 {
     const STATIC_SIZE: Option<usize> = Some(8);
 
